@@ -1,172 +1,104 @@
 """
 [ ] Add unittest
-[ ] Make abstract methods (?)
+[x] Make abstract methods (?)
 [o] Add argparse
 """
 
-import argparse
 from collections import Counter
-from random import choices, sample, seed
-from math import sqrt
-from matplotlib import pyplot as plt
+from random import choices, sample
+from math import sqrt, log, inf
 
-# Parse command line arguments
-parser = argparse.ArgumentParser()
-parser.add_argument("-t", "--test", default=[], nargs="*", help="Run given tests.")
-parser.add_argument("-s", "--seed", default=0, type=int, help="Set seed.")
-
-options = parser.parse_args()
-
-# Set seed
-seed(options.seed)
 
 
 class Population:
     def __init__(self, weighted_groups):
-        self.groups = tuple(weighted_groups.keys())
-        self.weights = tuple(weighted_groups.values())
+        self._weighted_groups = weighted_groups
         self.group_index = {group : i for i, group in enumerate(self.groups)}
 
+
+    @property
+    def groups(self):
+        return tuple(self._weighted_groups.keys())
+
+
+    @property
+    def weights(self):
+        return tuple(self._weighted_groups.values())
+
+
+    def p(self, group):
+        return self[group] / sum(self.weights)
+
+
     def __getitem__(self, group):
-        return self.weights[self.group_index[group]]
+        return self._weighted_groups[group]
+
+
+    def __contains__(self, key):
+        return key in self._weighted_groups
+
+
+    def __len__(self):
+        return len(self.groups)
+
+
+    def __dict__(self):
+        return dict(zip(self.groups, self.weights))
 
 
 
-def _poll_without_replacement(population, size):
-    assert size <= sum(population.weights)
-
+def votes(population, size, *, without_replacement=False):
     weights = list(population.weights)
 
+    assert size <= sum(weights)
 
-    # naive
-    voters = [g for g in population.groups for _p in range(population[g])]
-
-    return Counter(sample(voters, k=size))
-
-    # def votes():
-    #     for _person in range(size):
-    #         vote = choices(population.groups, weights)[0]
-    #         # update weights; remove voter from valid voters
-    #         weights[population.group_index[vote]] -= 1
-    #         yield vote
-
-    # return Counter(votes())
-
-
-
-def _poll_with_replacement(population, size):
-    assert size <= sum(population.weights)
-
-    weights = list(population.weights)
-
-    # naive
-    return Counter(choices(population.groups, weights, k=size))
-
-
-    # def votes():
-    #     for _person in range(size):
-    #         vote = choices(population.groups, weights)[0]
-    #         yield vote
-
-    # return Counter(votes())
+    for _person in range(size):
+        vote = choices(population.groups, weights)[0]
+        if without_replacement:
+            # update weights; remove voter from valid voters
+            weights[population.group_index[vote]] -= 1
+        yield vote
 
 
 
 def poll(population, size, *, without_replacement=False):
-    if without_replacement:
-        return _poll_without_replacement(population, size)
-    else:
-        return _poll_with_replacement(population, size)
+    return Counter(votes(population, size, without_replacement=without_replacement))
+
+
+def Tally(population, N, n=50, *, without_replacement=False):
+    from itertools import islice
+
+    def take(it, n): return islice(it, n)
+
+    # TODO : replacement
+    voting = votes(population, N, without_replacement=without_replacement)
+
+    while tally := Counter(take(voting, N//n)):
+        yield tally
 
 
 
-def sigma(group_size, population_size, *, fpc=False, exact=False):
-    n, N = group_size, population_size
-
-    p = n / N if exact else 0.5
-
-    sigma = sqrt(p * (1-p) / n) * (sqrt((N-n)/(N-1)) if fpc else 1)
-
-    return sigma
+def sigma(p=0.5, n=1, N=inf):
+    return sqrt(p * (1-p) / n) * sqrt(1 - (n-1)/(N-1))
 
 
-
-population = Population({
-    "a" : 100,
-    "b" : 600,
-    "c" : 999,
-})
-
-if __name__ == "__main__":
-    result = poll(population, sum(population.weights), without_replacement=False)
-
-    print(result)
-
-    s = sigma(result["a"], sum(population.weights))
-
-    print(s)
-
-    for test in options.test:
-        # todo
-        print(test)
-
-# ===
-
-def error(self, alpha):
-    self._assert_has_polled()
-
+def z_value(alpha=0.95):
     # approx formula
     # http://m-hikari.com/ams/ams-2014/ams-85-88-2014/epureAMS85-88-2014.pdf
+    # p. 4328
     # e.g. z_{alpha = 0.95} = 2
-    z_alpha = 10/math.log(41) * math.log(
-        1 - math.log(-math.log(alpha)/math.log(2))/math.log(22)
-    )
+    return 10/log(41) * log(1 - log(-log(alpha)/log(2))/log(22))
 
-    return self._polls[-1].sigma * z_alpha * 100
 
-# ===
-
-from scipy.stats import binom, hypergeom, norm
-
-binomial_pmf = binom.pmf
-hypergeometric_pmf = hypergeom.pmf
-normal_pdf = norm.pdf
-
-# ===
-
-def foo():
-    for rect, change in zip(rects, changes):
-        x = rect.get_x() + rect.get_width()/2
-        y = rect.get_height()
-
-        ax.text(x, y, f"{y:.1f}", ha='center', va='bottom')
-
-        if _changes:
-            cs = '▲' if change > 0 else ('▼' if change < 0 else '■')
-            cc = 'g' if change > 0 else ('r' if change < 0 else 'k')
-
-            ax.text(x, y, f"{cs} {change:.1f}", ha="center", va="top", color=cc)
-
-# ===
-
-p = 1/3 # 16 / 100
-n = 5 # 1_000
-N = 30 # 5_000_000
-
-N_s = 1000
-
-X = list(range(n+1))
-X_s = list(range(N_s+1))
-X_p = [x/n for x in X]
-X_sp = [x/(N_s+1) for x in X_s]
-
-sigma = math.sqrt(p * (1-p) / n)
-sigma_fpc = sigma * math.sqrt((N - n)/(N-1))
-
-sigma_hat = math.sqrt(1/2 * (1-1/2) / n)
-
-Y = [binomial_pmf(x, n, p) for x in X]
-Y_fpc = [hypergeometric_pmf(x, N, int(N*p), n) for x in X]
-Y_CLT = [normal_pdf(x, p, sigma)/n for x in X_sp]
-Y_CLT_fpc = [normal_pdf(x, p, sigma_fpc)/n for x in X_sp]
-Y_CLT_worst = [normal_pdf(x, p, sigma_hat)/n for x in X_sp]
+def error(p=0.5, n=1, N=inf, alpha=0.95):
+    """
+    The approximate error of a binomial distribution as a limit to the bell.
+    This approximation has several inaccuracies, including, but not limited to:
+    * No continuity correction (+ 0.5/n)
+    * Biased estimator (also known as wald method)
+    * Unknown sigma should imply the use of the t-distribution,
+        instead of the bell distribution, but given that the assumption
+        to use the bell distribution as a limiting distribution, the sample
+        size is already large enough to justify the use of the z_value.
+    """
+    return z_value(alpha) * sigma(p, n, N)
